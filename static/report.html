@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
+  <meta content="#0a4f73" name="theme-color"/>
+  <link href="manifest.json" rel="manifest"/>
+  <link href="icon.svg" rel="icon"/>
+  <title>
+   FindBack: Report item
+  </title>
+  <link href="style.css" rel="stylesheet"/>
+ </head>
+ <body>
+  <main style="max-width:760px">
+   <div class="head">
+    <div>
+     <h1 id="h">
+     </h1>
+     <p class="sub" id="s">
+     </p>
+    </div>
+   </div>
+   <div class="seg">
+    <a href="report.html?type=LOST" id="tl">
+     I lost something
+    </a>
+    <a href="report.html?type=FOUND" id="tf">
+     I found something
+    </a>
+   </div>
+   <form class="panel" id="f">
+    <fieldset>
+     <legend>
+      What was it?
+     </legend>
+     <div class="g">
+      <label>
+       Item name
+       <input name="name" placeholder="Black leather wallet" required=""/>
+      </label>
+      <label>
+       Category
+       <select name="cate">
+        <option>
+         Wallet
+        </option>
+        <option>
+         Phone
+        </option>
+        <option>
+         ID / Passport
+        </option>
+        <option>
+         Keys
+        </option>
+        <option>
+         Bag
+        </option>
+        <option>
+         Electronics
+        </option>
+        <option>
+         Other
+        </option>
+       </select>
+      </label>
+      <label class="wide">
+       Description and keywords
+       <textarea name="description" placeholder="Colour, brand, marks, anything that helps identify it" rows="3"></textarea>
+      </label>
+     </div>
+    </fieldset>
+    <fieldset>
+     <legend>
+      Where and when?
+     </legend>
+     <div class="g">
+      <label>
+       Location zone
+       <select name="location">
+        <option>
+         Library
+        </option>
+        <option>
+         Cafeteria
+        </option>
+        <option>
+         Main Building
+        </option>
+        <option>
+         Sports Ground
+        </option>
+        <option>
+         Dormitory
+        </option>
+        <option>
+         Washroom
+        </option>
+        <option>
+         Other
+        </option>
+       </select>
+      </label>
+      <label>
+       Date
+       <input name="date" required="" type="date"/>
+      </label>
+     </div>
+    </fieldset>
+    <fieldset>
+     <legend>
+      Who should we contact?
+     </legend>
+     <div class="g">
+      <label class="wide">
+       Your name or contact
+       <input name="person" placeholder="Name, phone or email" required=""/>
+      </label>
+      <label class="chk wide">
+       <input name="urgent" type="checkbox"/>
+       Urgent item (passport, ID card, phone)
+      </label>
+     </div>
+    </fieldset>
+    <button class="btn">
+     Save report
+    </button>
+   </form>
+   <section class="panel" hidden="" id="out">
+   </section>
+  </main>
+  <script src="app.js">
+  </script>
+  <script>
+// Decide if this page is for a LOST or a FOUND item (from the address, ?type=...).
+var type = 'LOST';
+if (location.search.toUpperCase().indexOf('FOUND') !== -1) {
+  type = 'FOUND';
+}
+
+var form = document.getElementById('f');
+
+
+if (type === 'LOST') {
+  buildMenu('Report lost');
+  document.getElementById('tl').className = 'on';
+  document.getElementById('h').textContent = 'Report a lost item';
+  document.getElementById('s').textContent = 'Tell us what went missing and we will look for matches.';
+} else {
+  buildMenu('Report found');
+  document.getElementById('tf').className = 'on';
+  document.getElementById('h').textContent = 'Report a found item';
+  document.getElementById('s').textContent = 'Tell us what you found so the owner can claim it.';
+}
+
+
+// Puts today's date in the date box.
+function setToday() {
+  form.elements['date'].valueAsDate = new Date();
+}
+setToday();
+
+
+// Shows what was saved. For a lost item it also shows the best matches.
+function showSavedResult(saved) {
+  var box = document.getElementById('out');
+  box.hidden = false;
+  box.innerHTML = '<h2>Saved as <span class="idtag">' + saved.id + '</span></h2>';
+  box.scrollIntoView();
+
+  if (type !== 'LOST') {
+    return;
+  }
+
+  callApi('GET', '/matches/' + saved.id, null, function (matches) {
+    if (matches.length === 0) {
+      box.innerHTML += '<p class="meta">No matches yet. New found reports are checked as they arrive.</p>';
+      return;
+    }
+
+    var title = matches.length + ' possible match';
+    if (matches.length > 1) {
+      title += 'es';
+    }
+
+    var html = '<h3>' + title + '</h3>';
+    for (var i = 0; i < matches.length; i++) {
+      var m = matches[i];
+      html += '<div class="mcard">';
+      html += '<div class="mtop"><b>#' + m.id + ' ' + escapeHtml(m.name) + '</b><span class="score">' + m.score + '</span></div>';
+      html += '<div class="meta">' + escapeHtml(m.location) + ' · ' + escapeHtml(m.reason) + '</div>';
+      html += '</div>';
+    }
+    html += '<a class="btn ghost sm" href="matches.html?lost=' + saved.id + '">Open in Matches</a>';
+
+    box.innerHTML += html;
+  });
+}
+
+
+// Runs when the Save report button is pressed.
+form.onsubmit = function (event) {
+  event.preventDefault();
+
+  var report = {
+    name: form.elements['name'].value,
+    cate: form.elements['cate'].value,
+    description: form.elements['description'].value,
+    location: form.elements['location'].value,
+    date: form.elements['date'].value,
+    person: form.elements['person'].value,
+    urgent: form.elements['urgent'].checked,
+    type: type
+  };
+
+  callApi('POST', '/items', report, function (saved) {
+    showMessage('Report saved', false);
+    form.reset();
+    setToday();
+    showSavedResult(saved);
+  });
+};
+</script>
+ </body>
+</html>

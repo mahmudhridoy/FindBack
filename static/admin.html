@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
+  <meta content="#0a4f73" name="theme-color"/>
+  <link href="manifest.json" rel="manifest"/>
+  <link href="icon.svg" rel="icon"/>
+  <title>
+   FindBack: Admin
+  </title>
+  <link href="style.css" rel="stylesheet"/>
+ </head>
+ <body>
+  <main>
+   <div class="head">
+    <div>
+     <h1>
+      Admin
+     </h1>
+     <p class="sub">
+      Manage items, process claims and review history.
+     </p>
+    </div>
+   </div>
+   <div class="tabs" id="tabs">
+    <button class="on" id="tab-items" onclick="showTab('items')">
+     Items
+    </button>
+    <button id="tab-claims" onclick="showTab('claims')">
+     Claims queue
+    </button>
+    <button id="tab-undo" onclick="showTab('undo')">
+     Undo history
+    </button>
+    <button id="tab-ds" onclick="showTab('ds')">
+     Data structures
+    </button>
+   </div>
+   <section class="panel" id="items">
+   </section>
+   <section class="panel" hidden="" id="claims">
+    <form class="rowf" id="cf">
+     <input aria-label="Item ID" name="itemId" placeholder="Item ID" required="" type="number"/>
+     <input aria-label="Claimant" name="claimant" placeholder="Claimant name" required=""/>
+     <button class="btn">
+      Add claim
+     </button>
+     <button class="btn ghost" id="next" type="button">
+      Process next
+     </button>
+    </form>
+    <div id="cl">
+    </div>
+   </section>
+   <section class="panel" hidden="" id="undo">
+    <button class="btn" id="ub">
+     Undo last action
+    </button>
+    <div id="ul">
+    </div>
+   </section>
+   <section class="panel" hidden="" id="ds">
+   </section>
+  </main>
+  <script src="app.js">
+  </script>
+  <script>
+buildMenu('Admin');
+
+var tabNames = ['items', 'claims', 'undo', 'ds'];
+
+
+// ---------- Items tab ----------
+
+function loadItems() {
+  callApi('GET', '/items', null, function (items) {
+    document.getElementById('items').innerHTML = '<h2>All items</h2>' + makeItemRows(items, true);
+  });
+}
+
+// Runs when a Delete button is pressed.
+function deleteItem(id) {
+  var sure = confirm('Delete item ' + id + '? You can undo this from the Undo history tab.');
+  if (sure === false) {
+    return;
+  }
+
+  callApi('DELETE', '/items/' + id, null, function () {
+    showMessage('Deleted item ' + id, false);
+    loadItems();
+  });
+}
+
+
+// ---------- Claims tab ----------
+
+function loadClaims() {
+  callApi('GET', '/claims', null, function (queue) {
+    // One small square per place in the queue. Blue squares are used places.
+    var slots = '';
+    for (var k = 0; k < queue.capacity; k++) {
+      var css = '';
+      if (k < queue.size) {
+        css = 'on';
+        if (k === 0) {
+          css = 'on fr';
+        }
+      }
+      slots += '<i class="' + css + '"></i>';
+    }
+
+    var html = '<h3>Queue: ' + queue.size + ' of ' + queue.capacity + ' used</h3>';
+    html += '<div class="slots">' + slots + '</div>';
+
+    if (queue.items.length === 0) {
+      html += '<div class="empty"><b>The queue is empty</b>Add a claim above.</div>';
+    } else {
+      html += '<div class="list">';
+      for (var n = 0; n < queue.items.length; n++) {
+        var claim = queue.items[n];
+        html += '<div class="row">';
+        html += '<span class="idtag">' + (n + 1) + '</span>';
+        html += '<div class="grow"><div class="t">Item ' + claim.itemId;
+        if (n === 0) {
+          html += ' <span class="pill found">Next up</span>';
+        }
+        html += '</div><div class="meta">' + escapeHtml(claim.claimant) + ' · ' + escapeHtml(claim.time) + '</div></div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    document.getElementById('cl').innerHTML = html;
+  });
+}
+
+// Runs when the Add claim form is sent.
+document.getElementById('cf').onsubmit = function (event) {
+  event.preventDefault();
+  var form = document.getElementById('cf');
+
+  var claim = {
+    itemId: Number(form.elements['itemId'].value),
+    claimant: form.elements['claimant'].value
+  };
+
+  callApi('POST', '/claims', claim, function () {
+    showMessage('Claim added', false);
+    form.reset();
+    loadClaims();
+  });
+};
+
+// Takes the first claim out of the queue.
+document.getElementById('next').onclick = function () {
+  callApi('POST', '/claims/next', null, function (claim) {
+    showMessage('Processed claim for item ' + claim.itemId, false);
+    loadClaims();
+  });
+};
+
+
+// ---------- Undo tab ----------
+
+function loadUndo() {
+  callApi('GET', '/undo', null, function (actions) {
+    var html = '';
+
+    if (actions.length === 0) {
+      html = '<div class="empty"><b>Nothing to undo</b>Adds and deletes will be listed here.</div>';
+    } else {
+      html = '<div class="list">';
+      for (var n = 0; n < actions.length; n++) {
+        html += '<div class="row">';
+        html += '<span class="idtag">' + (n + 1) + '</span>';
+        html += '<div class="grow t">' + escapeHtml(actions[n].desc) + '</div>';
+        if (n === 0) {
+          html += '<span class="pill">Latest</span>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    document.getElementById('ul').innerHTML = html;
+  });
+}
+
+// Undoes the newest add or delete.
+document.getElementById('ub').onclick = function () {
+  callApi('POST', '/undo', null, function (result) {
+    showMessage('Undid: ' + result.desc, false);
+    loadUndo();
+  });
+};
+
+
+// ---------- Data structures tab ----------
+
+function loadStructures() {
+  callApi('GET', '/debug/structures', null, function (d) {
+    var q = d.queue;
+
+    var slots = '';
+    for (var k = 0; k < q.capacity; k++) {
+      var css = '';
+      // A place is used when it lies between the front and the rear (wrapping around).
+      if (((k - q.frontIndex + q.capacity) % q.capacity) < q.size) {
+        css = 'on';
+      }
+      slots += '<i class="' + css + '"></i>';
+    }
+
+    var scores = d.matchList.lastMatchScores.join(', ');
+    if (scores === '') {
+      scores = 'none';
+    }
+
+    var latest = d.undoStack.top;
+    if (latest === '') {
+      latest = '—';
+    }
+
+    var html = '<h2>Data structures overview</h2>';
+    html += '<div class="stats">';
+    html += '<div class="stat"><b>' + d.linkedList.size + '</b><span>Singly linked list · Items</span></div>';
+    html += '<div class="stat"><b>' + d.matchList.lastMatchScores.length + '</b><span>Sorted list · Best matches</span></div>';
+    html += '<div class="stat"><b>' + q.size + '/' + q.capacity + '</b><span>Circular queue · Pending claims</span></div>';
+    html += '<div class="stat"><b>' + d.undoStack.size + '</b><span>Stack · Undo history</span></div>';
+    html += '</div>';
+    html += '<h3>Claim queue (circular, front at slot ' + q.frontIndex + ', rear at slot ' + q.rearIndex + ')</h3>';
+    html += '<div class="slots">' + slots + '</div>';
+    html += '<div class="kv"><div><b>' + escapeHtml(scores) + '</b>last match scores</div>';
+    html += '<div><b>' + escapeHtml(latest) + '</b>latest undo action</div></div>';
+    html += '<p class="meta">Item lookup and keyword search walk through the linked list one item at a time.</p>';
+    html += '<details><summary>Raw JSON</summary><pre>' + escapeHtml(JSON.stringify(d, null, 2)) + '</pre></details>';
+
+    document.getElementById('ds').innerHTML = html;
+  });
+}
+
+
+// ---------- Tabs ----------
+
+// Shows one tab and hides the others.
+function showTab(name) {
+  for (var i = 0; i < tabNames.length; i++) {
+    var isThis = (tabNames[i] === name);
+    document.getElementById(tabNames[i]).hidden = !isThis;
+    if (isThis) {
+      document.getElementById('tab-' + tabNames[i]).className = 'on';
+    } else {
+      document.getElementById('tab-' + tabNames[i]).className = '';
+    }
+  }
+
+  if (name === 'items') { loadItems(); }
+  if (name === 'claims') { loadClaims(); }
+  if (name === 'undo') { loadUndo(); }
+  if (name === 'ds') { loadStructures(); }
+}
+
+showTab('items');
+</script>
+ </body>
+</html>

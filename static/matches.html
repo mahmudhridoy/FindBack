@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
+  <meta content="#0a4f73" name="theme-color"/>
+  <link href="manifest.json" rel="manifest"/>
+  <link href="icon.svg" rel="icon"/>
+  <title>
+   FindBack: Matches
+  </title>
+  <link href="style.css" rel="stylesheet"/>
+ </head>
+ <body>
+  <main style="max-width:760px">
+   <div class="head">
+    <div>
+     <h1>
+      Matches
+     </h1>
+     <p class="sub">
+      Pick a lost report to see the best matching found items.
+     </p>
+    </div>
+   </div>
+   <section class="panel">
+    <div class="rowf">
+     <select aria-label="Lost item" id="lost">
+     </select>
+     <button class="btn" id="go">
+      Find matches
+     </button>
+    </div>
+    <p class="meta" id="sel">
+    </p>
+   </section>
+   <section class="panel" hidden="" id="out">
+   </section>
+  </main>
+  <script src="app.js">
+  </script>
+  <script>
+buildMenu('Matches');
+
+var lostItems = [];   // every lost item that is still open
+
+
+// Looks for a lost item by its ID. Returns null if it is not there.
+function findLostItem(id) {
+  for (var i = 0; i < lostItems.length; i++) {
+    if (String(lostItems[i].id) === String(id)) {
+      return lostItems[i];
+    }
+  }
+  return null;
+}
+
+
+// Shows the details of the lost item chosen in the drop-down.
+function showSelected() {
+  var item = findLostItem(document.getElementById('lost').value);
+  var text = '';
+  if (item !== null) {
+    text = item.cate + ' · lost at ' + item.location + ' on ' + item.date + ' · reported by ' + item.person;
+  }
+  document.getElementById('sel').textContent = text;
+}
+
+
+// Gets the best matches for the chosen lost item and shows them.
+function findMatches() {
+  var id = document.getElementById('lost').value;
+  if (id === '') {
+    showMessage('Choose a lost item first', true);
+    return;
+  }
+
+  callApi('GET', '/matches/' + id, null, function (matches) {
+    var box = document.getElementById('out');
+    box.hidden = false;
+
+    if (matches.length === 0) {
+      box.innerHTML = '<h2>Best matches</h2><div class="empty"><b>No matches yet</b>Check again after new found items are reported.</div>';
+      return;
+    }
+
+    var html = '<h2>Best matches</h2>';
+    for (var i = 0; i < matches.length; i++) {
+      var m = matches[i];
+      var barWidth = m.score;
+      if (barWidth > 100) {
+        barWidth = 100;
+      }
+
+      html += '<div class="mcard">';
+      html += '<div class="mtop"><b>#' + m.id + ' ' + escapeHtml(m.name) + '</b><span class="score">' + m.score + '</span></div>';
+      html += '<div class="bar"><i style="width:' + barWidth + '%"></i></div>';
+      html += '<div class="meta">Found at ' + escapeHtml(m.location) + '</div>';
+      html += '<div style="margin-top:6px">';
+      for (var key in m.breakdown) {
+        html += '<span class="pill">' + escapeHtml(key) + ' +' + m.breakdown[key] + '</span>';
+      }
+      html += '</div>';
+      html += '<button class="btn sm" onclick="startClaim(' + m.id + ')">Start claim</button>';
+      html += '</div>';
+    }
+
+    box.innerHTML = html;
+  });
+}
+
+
+// Adds a claim for the found item to the claims queue.
+function startClaim(foundId) {
+  var lostItem = findLostItem(document.getElementById('lost').value);
+  var claimant = 'Unknown';
+  if (lostItem !== null) {
+    claimant = lostItem.person;
+  }
+
+  var claim = { itemId: foundId, claimant: claimant };
+  callApi('POST', '/claims', claim, function () {
+    showMessage('Claim added. Process it from Admin.', false);
+  });
+}
+
+
+// Fills the drop-down with the open lost items.
+function loadLostItems() {
+  callApi('GET', '/items', null, function (items) {
+    lostItems = [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type === 'LOST' && items[i].status !== 'CLAIMED') {
+        lostItems.push(items[i]);
+      }
+    }
+
+    var select = document.getElementById('lost');
+    if (lostItems.length === 0) {
+      select.innerHTML = '<option value="">No open lost reports</option>';
+      return;
+    }
+
+    var options = '';
+    for (var j = 0; j < lostItems.length; j++) {
+      options += '<option value="' + lostItems[j].id + '">#' + lostItems[j].id + ' ' + escapeHtml(lostItems[j].name) + '</option>';
+    }
+    select.innerHTML = options;
+
+    // If the address has ?lost=105, choose that item and search straight away.
+    var position = location.search.indexOf('lost=');
+    if (position !== -1) {
+      var wanted = location.search.substring(position + 5);
+      if (findLostItem(wanted) !== null) {
+        select.value = wanted;
+        showSelected();
+        findMatches();
+        return;
+      }
+    }
+
+    showSelected();
+  });
+}
+
+
+document.getElementById('lost').onchange = showSelected;
+document.getElementById('go').onclick = findMatches;
+
+loadLostItems();
+</script>
+ </body>
+</html>
